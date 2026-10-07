@@ -1,8 +1,8 @@
 /* Feather Fury: game rules and physics, no drawing.
  *
- * World units are metres and seconds, +y is up, the ground is y = 0 and the
- * slingshot stands at x = 0. The same file runs in the browser and in node
- * (tools/check.js plays every level headless to prove it can be won).
+ * World units are metres and seconds, +y is up and the slingshot stands at
+ * x = 0. The ground is a terrain polyline (level.terrain). The same file runs
+ * in the browser and in node (tools/check.js plays every level headless).
  */
 (function (root) {
   "use strict";
@@ -10,9 +10,9 @@
   const V = pl.Vec2;
 
   const DT = 1 / 60;
-  const SLING = { x: 0, y: 2.75 };      // pouch at rest
+  const SLING_H = 2.75;                 // pouch height above the slingshot's foot
   const MAX_PULL = 2.0;                 // metres the pouch can be pulled
-  const MAX_SPEED = 21;                 // launch speed at full pull
+  const MAX_SPEED = 21;                 // launch speed at full pull, unupgraded
 
   const MATS = {
     wood:  { density: 0.9, friction: 0.8, restitution: 0.05, hp: 9,  score: 500 },
@@ -32,10 +32,21 @@
   };
 
   const PIGS = {
-    s:    { r: 0.32, hp: 3 },
-    m:    { r: 0.44, hp: 5 },
-    l:    { r: 0.58, hp: 8 },
-    king: { r: 0.78, hp: 16 },
+    s:    { r: 0.32, hp: 3,  coins: 10 },
+    m:    { r: 0.44, hp: 5,  coins: 15 },
+    l:    { r: 0.58, hp: 8,  coins: 20 },
+    boss: { r: 0.68, hp: 13, coins: 60 },
+    king: { r: 0.78, hp: 18, coins: 150 },
+  };
+  const HELMET_COINS = 10;
+
+  // Upgrade tiers 0..5. Bird: bigger, leather helmet, iron plate, spiked helmet, golden armour.
+  const TIERS = {
+    size:    [1, 1.12, 1.12, 1.18, 1.25, 1.3],
+    density: [1, 1, 1.1, 1.3, 1.35, 1.45],
+    dmg:     [1, 1.05, 1.25, 1.45, 1.7, 2.0],
+    sling:   [1, 1.06, 1.12, 1.18, 1.24, 1.3],      // launch speed
+    scope:   [6, 10, 15, 22, 32, 60],               // aiming dots
   };
 
   const PIG_SCORE = 5000, BIRD_BONUS = 10000;
@@ -47,12 +58,15 @@
   }
 
   class Game {
-    constructor(level, emit) {
+    // upg: { sling, scope, birds: { red: tier, ... } }, all optional
+    constructor(level, emit, upg) {
       this.level = level;
       this.emit = emit || function () {};
+      this.upg = upg || {};
       this.world = new pl.World({ gravity: V(0, -10) });
       this.ents = [];
       this.score = 0;
+      this.coins = 0;
       this.time = 0;
       this.queue = level.birds.slice();
       this.loaded = null;
@@ -65,11 +79,16 @@
       this.lastTrail = [];       // puffs of the previous shot
       this.damageOn = false;
       this.pending = [];         // things to do after the physics step
-      this.bonusDone = false;
 
+      this.terrain = level.terrain || [[-80, 0], [260, 0]];
       const ground = this.world.createBody();
-      ground.createFixture(pl.Edge(V(-80, 0), V(260, 0)), { friction: 0.9 });
+      ground.createFixture(pl.Chain(this.terrain.map(p => V(p[0], p[1])), false), { friction: 0.9 });
+      ground.setUserData({ kind: "ground" });
       this.ground = ground;
+      const base = level.sling ? level.sling.y : this.groundY(0);
+      this.pouch = { x: 0, y: base + SLING_H };
+      this.slingBase = base;
+      this.minY = Math.min(...this.terrain.map(p => p[1]));
 
       let maxX = 10;
       for (const it of level.items) {
@@ -89,13 +108,33 @@
       this.loadNext();
     }
 
+    groundY(x) {
+      const t = this.terrain;
+      if (x <= t[0][0]) return t[0][1];
+      let lo = 0, hi = t.length - 1;
+      while (hi - lo > 1) { const m = (lo + hi) >> 1; if (t[m][0] <= x) lo = m; else hi = m; }
+      const a = t[lo], b = t[hi];
+      if (x >= b[0]) return b[1];
+      return a[1] + (b[1] - a[1]) * (x - a[0]) / (b[0] - a[0]);
+    }
+
+    tier(type) { return (this.upg.birds && this.upg.birds[type]) || 0; }
+
+    birdStats(type) {
+      const t = this.tier(type), b = BIRDS[type];
+      return { r: b.r * TIERS.size[t], density: b.density * TIERS.density[t], dmg: TIERS.dmg[t], tier: t };
+    }
+
+    maxSpeed() { return MAX_SPEED * TIERS.sling[this.upg.sling || 0]; }
+
     add(it) {
       const t = it[0];
-      if (t === "ground") {          // static earth: x, y (centre), w, h
+      if (t === "ground") {          // static rock: x, y (centre), w, h
         const [, x, y, w, h] = it;
         const b = this.world.createBody({ position: V(x, y) });
         b.createFixture(pl.Box(w / 2, h / 2), { friction: 0.9 });
-        const e = { kind: "ground", body: b, x0: x - w / 2, w, h };
+        const e = { kind: "rock", body: b, x0: x - w / 2, w, h, seed: (x * 1000) | 0 };
+        b.setUserData(e);
         this.ents.push(e);
         return e;
       }
@@ -105,7 +144,7 @@
         const b = this.world.createBody({ type: "dynamic", position: V(x, y), angularDamping: 7 });
         b.createFixture(pl.Circle(p.r), { density: 0.8, friction: 0.8, restitution: 0.15 });
         const hp = p.hp * (helmet ? 2.3 : 1);
-        const e = { kind: "pig", body: b, r: p.r, size, helmet: !!helmet, hp, maxHp: hp, x0: x - p.r, blink: Math.random() * 4 };
+        const e = { kind: "pig", body: b, r: p.r, size, helmet: !!helmet, hp, maxHp: hp, x0: x - p.r, blink: (x * 7.3) % 4 };
         b.setUserData(e);
         this.ents.push(e);
         return e;
@@ -134,7 +173,7 @@
       }
       e.body = b;
       e.hp = e.maxHp = mat === "tnt" ? MATS.tnt.hp : blockHp(mat, e.area);
-      e.seed = Math.floor(Math.random() * 1e6);
+      e.seed = Math.floor(((it[2] || 0) * 977 + (it[3] || 0) * 131) * 1000) >>> 0;
       b.setUserData(e);
       this.ents.push(e);
       return e;
@@ -158,9 +197,15 @@
     clampPull(dx, dy) {
       const d = Math.hypot(dx, dy);
       if (d > MAX_PULL) { dx *= MAX_PULL / d; dy *= MAX_PULL / d; }
-      // keep the pouch above the ground
-      if (SLING.y + dy < 0.45) dy = 0.45 - SLING.y;
+      const floor = this.groundY(this.pouch.x + dx) + 0.45;
+      if (this.pouch.y + dy < floor) dy = floor - this.pouch.y;
       return { x: dx, y: dy };
+    }
+
+    launchVelocity(dx, dy) {
+      const d = Math.hypot(dx, dy) || 1;
+      const speed = (Math.min(d, MAX_PULL) / MAX_PULL) * this.maxSpeed();
+      return { x: -dx / d * speed, y: -dy / d * speed };
     }
 
     launch(dx, dy) {
@@ -168,9 +213,8 @@
       const p = this.clampPull(dx, dy);
       const d = Math.hypot(p.x, p.y);
       if (d < 0.25) return false;
-      const speed = (d / MAX_PULL) * MAX_SPEED;
-      const vx = -p.x / d * speed, vy = -p.y / d * speed;
-      const bird = this.spawnBird(this.loaded, SLING.x + p.x, SLING.y + p.y, vx, vy);
+      const v = this.launchVelocity(p.x, p.y);
+      const bird = this.spawnBird(this.loaded, this.pouch.x + p.x, this.pouch.y + p.y, v.x, v.y);
       this.loaded = null;
       this.flying = [bird];
       this.state = "flying";
@@ -182,33 +226,46 @@
       return true;
     }
 
-    spawnBird(type, x, y, vx, vy, small) {
-      const spec = BIRDS[type];
-      const r = small ? spec.r : spec.r;
+    spawnBird(type, x, y, vx, vy) {
+      const st = this.birdStats(type);
       const b = this.world.createBody({
         type: "dynamic", position: V(x, y), bullet: true,
         angularDamping: 2.5, linearDamping: 0.05,
       });
-      b.createFixture(pl.Circle(r), { density: spec.density, friction: 0.6, restitution: 0.25 });
+      b.createFixture(pl.Circle(st.r), { density: st.density, friction: 0.6, restitution: 0.25 });
       b.setLinearVelocity(V(vx, vy));
-      const e = { kind: "bird", type, body: b, r, used: false, hit: false, hitTime: 0, born: this.time };
+      const e = { kind: "bird", type, body: b, r: st.r, tier: st.tier, dmg: st.dmg, used: false, hit: false, hitTime: 0, born: this.time };
       b.setUserData(e);
       this.ents.push(e);
+      return e;
+    }
+
+    spawnEgg(x, y, vx, vy, tier) {
+      const b = this.world.createBody({ type: "dynamic", position: V(x, y), bullet: true });
+      const r = 0.3 * (tier >= 5 ? 1.15 : 1);
+      b.createFixture(pl.Circle(r), { density: 6, friction: 0.5, restitution: 0 });
+      b.setLinearVelocity(V(vx, vy));
+      const e = { kind: "bird", type: "white", egg: true, used: true, body: b, r, tier, dmg: TIERS.dmg[tier], hit: false, hitTime: 0, born: this.time };
+      b.setUserData(e);
+      this.ents.push(e);
+      this.flying.push(e);
       return e;
     }
 
     // Tap during flight. Returns true when something happened.
     ability() {
       if (this.state !== "flying") return false;
-      const bird = this.flying.find(b => b.kind === "bird" && !b.dead);
+      const bird = this.flying.find(b => b.kind === "bird" && !b.dead && !b.egg);
       if (!bird || bird.used) return false;
       if (bird.hit && bird.type !== "black") return false;
       const pos = bird.body.getPosition(), vel = bird.body.getLinearVelocity();
       const sp = Math.hypot(vel.x, vel.y) || 1;
+      const gold = bird.tier >= 5;
       switch (bird.type) {
         case "blue": {
           bird.used = true;
-          for (const da of [-0.2, 0.2]) {
+          const spread = gold ? [-0.32, -0.16, 0.16, 0.32] : [-0.2, 0.2];
+          for (const da of spread) {
             const c = Math.cos(da), s = Math.sin(da);
             const nb = this.spawnBird("blue", pos.x, pos.y + da * 1.4, vel.x * c - vel.y * s, vel.x * s + vel.y * c);
             nb.used = true;
@@ -219,7 +276,7 @@
         }
         case "yellow": {
           bird.used = true;
-          const ns = Math.max(sp * 2.1, 26);
+          const ns = gold ? Math.max(sp * 2.6, 32) : Math.max(sp * 2.1, 26);
           bird.body.setLinearVelocity(V(vel.x / sp * ns, vel.y / sp * ns));
           bird.boost = this.time;
           this.emit("ability", { type: "yellow", x: pos.x, y: pos.y });
@@ -231,19 +288,20 @@
           return true;
         case "white": {
           bird.used = true;
-          const egg = this.spawnBird("white", pos.x, pos.y - 0.7, vel.x * 0.15, -14);
-          egg.kind = "bird";
-          egg.egg = true;
-          egg.used = true;
-          egg.r = 0.3;
-          egg.body.destroyFixture(egg.body.getFixtureList());
-          egg.body.createFixture(pl.Circle(0.3), { density: 6, friction: 0.5, restitution: 0 });
-          this.flying.push(egg);
+          this.spawnEgg(pos.x, pos.y - 0.7, vel.x * 0.15, -14, bird.tier);
+          if (gold) this.spawnEgg(pos.x + 0.7, pos.y - 0.9, vel.x * 0.3, -13, bird.tier);
           bird.body.setLinearVelocity(V(Math.max(vel.x, 4) * 1.3 + 4, 13));
-          bird.flown = true;
           this.emit("ability", { type: "white", x: pos.x, y: pos.y });
           return true;
         }
+        case "red":
+        case "big":
+          // golden armour: a battle cry that shoves everything nearby
+          if (!gold) return false;
+          bird.used = true;
+          this.explode(pos.x + 1.5, pos.y, bird.type === "big" ? 4 : 3.4, 26, 8, null, true);
+          this.emit("ability", { type: bird.type, x: pos.x, y: pos.y, cry: true });
+          return true;
       }
       return false;
     }
@@ -251,14 +309,17 @@
     explodeBird(bird) {
       if (bird.dead) return;
       const p = bird.body.getPosition();
+      const k = TIERS.dmg[bird.tier || 0];
       this.kill(bird);
-      this.explode(p.x, p.y, bird.egg ? 3.0 : 3.0, bird.egg ? 24 : 28, bird.egg ? 36 : 34, bird.egg ? null : "black");
+      if (bird.egg) this.explode(p.x, p.y, 3.0, 24, 36 * k, null);
+      else this.explode(p.x, p.y, 3.0 * (1 + 0.05 * bird.tier), 28, 34 * k, "black");
     }
 
-    explode(x, y, R, strength, dmg, birdType) {
-      this.emit("explode", { x, y, r: R });
+    explode(x, y, R, strength, dmg, birdType, cry) {
+      this.emit("explode", { x, y, r: R, cry: !!cry });
       for (const e of this.ents) {
-        if (e.dead || !e.body || e.kind === "ground") continue;
+        if (e.dead || !e.body || e.kind === "rock") continue;
+        if (cry && e.kind === "bird") continue;
         const p = e.body.getPosition();
         const dx = p.x - x, dy = p.y - y;
         const d = Math.hypot(dx, dy);
@@ -279,8 +340,7 @@
 
     preSolve(c) {
       if (!this.damageOn) return;
-      const fa = c.getFixtureA(), fb = c.getFixtureB();
-      const ba = fa.getBody(), bb = fb.getBody();
+      const ba = c.getFixtureA().getBody(), bb = c.getFixtureB().getBody();
       const wm = c.getWorldManifold(null);
       if (!wm) return;
       let approach = 0;
@@ -312,13 +372,16 @@
           e.hit = true;
           e.hitTime = this.time;
           if (e.egg) this.pending.push(() => this.explodeBird(e));
-          this.emit("birdhit", { type: e.type, j: J, x: e.body.getPosition().x, y: e.body.getPosition().y });
+          this.emit("birdhit", { type: e.type, j: J, x: e.body.getPosition().x, y: e.body.getPosition().y, tier: e.tier });
         }
         return;
       }
-      if (e.kind === "ground") return;
+      if (e.kind === "ground" || e.kind === "rock") return;
       let dmg = J;
-      if (other && other.kind === "bird" && e.kind === "block") dmg *= BIRDS[other.type].mult[e.mat];
+      if (other && other.kind === "bird") {
+        if (e.kind === "block") dmg *= BIRDS[other.type].mult[e.mat];
+        dmg *= other.dmg || 1;
+      }
       if (e.kind === "pig") dmg *= 1.2;
       dmg -= 0.35;
       if (dmg > 0) this.damage(e, dmg);
@@ -346,7 +409,9 @@
       this.kill(e);
       if (e.kind === "pig") {
         this.pigCount--;
-        this.emit("pigdie", { x: p.x, y: p.y, r: e.r, score: pt });
+        const coins = PIGS[e.size].coins + (e.helmet ? HELMET_COINS : 0);
+        this.coins += coins;
+        this.emit("pigdie", { x: p.x, y: p.y, r: e.r, score: pt, coins });
         if (this.pigCount === 0 && !this.clearTime) this.clearTime = this.time;
       } else {
         this.emit("break", { e, x: p.x, y: p.y, angle: e.body.getAngle(), score: pt });
@@ -372,13 +437,13 @@
 
       // remove what flew off the map
       for (const e of this.ents) {
-        if (e.dead || !e.body || e.kind === "ground") continue;
+        if (e.dead || !e.body || e.kind === "rock") continue;
         const p = e.body.getPosition();
-        if (p.y < -6 || p.x < -40 || p.x > this.maxX + 60) {
+        if (p.y < this.minY - 6 || p.x < -40 || p.x > this.maxX + 60) {
           if (e.kind === "pig") this.destroy(e); else this.kill(e);
         }
       }
-      if (this.ents.length > 200) this.ents = this.ents.filter(e => !e.dead);
+      if (this.ents.length > 220) this.ents = this.ents.filter(e => !e.dead);
 
       // black bird goes off by itself shortly after hitting something
       for (const b of this.flying) {
@@ -402,7 +467,7 @@
       // how much is still moving
       let maxV = 0;
       for (const e of this.ents) {
-        if (e.dead || !e.body || e.kind === "ground" || !e.body.isAwake()) continue;
+        if (e.dead || !e.body || e.kind === "rock" || !e.body.isAwake()) continue;
         const v = e.body.getLinearVelocity();
         const s = Math.hypot(v.x, v.y) + Math.abs(e.body.getAngularVelocity()) * 0.3;
         if (s > maxV) maxV = s;
@@ -486,7 +551,7 @@
     }
   }
 
-  const API = { Game, BIRDS, PIGS, MATS, SLING, MAX_PULL, MAX_SPEED, DT, planck: pl };
+  const API = { Game, BIRDS, PIGS, MATS, TIERS, SLING_H, MAX_PULL, MAX_SPEED, DT, planck: pl };
   if (typeof module !== "undefined" && module.exports) module.exports = API;
   else root.FF = API;
 })(typeof window !== "undefined" ? window : globalThis);

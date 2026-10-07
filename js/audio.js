@@ -124,7 +124,17 @@
       tone(70, 0.6, { type: "sine", to: 35, vol: 0.5 });
     },
     poof() { noise(0.2, { filter: "bandpass", freq: 1500, vol: 0.12 }); },
-    bonus() { tone(880, 0.12, { type: "triangle", vol: 0.15 }); tone(1320, 0.18, { type: "triangle", vol: 0.15, delay: 0.08 }); },
+    coin() {
+      if (throttle("coin", 70)) return;
+      tone(1320, 0.08, { type: "square", vol: 0.05 }); tone(1760, 0.16, { type: "square", vol: 0.05, delay: 0.06 });
+    },
+    buy() { [988, 1319, 1568].forEach((f, i) => tone(f, 0.14, { type: "triangle", vol: 0.16, delay: i * 0.07 })); },
+    cry() { tone(260, 0.5, { type: "sawtooth", to: 140, vol: 0.12 }); noise(0.4, { filter: "bandpass", freq: 500, vol: 0.25 }); },
+    clank() {
+      if (throttle("clank", 120)) return;
+      tone(1900, 0.18, { type: "triangle", vol: 0.1 }); tone(2700, 0.12, { type: "sine", vol: 0.06 });
+    },
+    bonus() { tone(880, 0.12,{ type: "triangle", vol: 0.15 }); tone(1320, 0.18, { type: "triangle", vol: 0.15, delay: 0.08 }); },
     star(i) { tone(660 * Math.pow(1.26, i), 0.35, { type: "triangle", vol: 0.2 }); },
     win() { [523, 659, 784, 1046].forEach((f, i) => tone(f, 0.3, { type: "triangle", vol: 0.18, delay: i * 0.12 })); },
     lose() {
