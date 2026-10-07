@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#3f8fd8">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Feather Fury</title>
+<meta name="description" content="Fling angry birds with an upgradeable slingshot through 5 worlds and 100 levels, and get the stolen eggs back from the pigs.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='34' r='26' fill='%23d42a24'/%3E%3Cellipse cx='34' cy='50' rx='18' ry='10' fill='%23f1d8bd'/%3E%3Ccircle cx='26' cy='30' r='6' fill='%23fff'/%3E%3Ccircle cx='40' cy='30' r='6' fill='%23fff'/%3E%3Ccircle cx='28' cy='31' r='3'/%3E%3Ccircle cx='42' cy='31' r='3'/%3E%3Cpath d='M16 20 L33 27 L50 20 L50 24 L33 31 L16 24Z'/%3E%3Cpath d='M30 36 L48 40 L30 44Z' fill='%23f6a21a'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lilita+One&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #2b1606;
+    --wood: #e0a05a;
+    --wood-dark: #8a4f1c;
+    --green: #6cc63a;
+    --green-dark: #2f7a12;
+    --red: #d42a24;
+    --gold: #ffd23a;
+    --sky: #3f8fd8;
+    --panel: #2a1d12;
+    --font: "Lilita One", "Arial Rounded MT Bold", "Trebuchet MS", sans-serif;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: var(--sky);
+    font-family: var(--font);
+    color: #fff;
+    user-select: none; -webkit-user-select: none;
+    touch-action: none;
+  }
+  canvas#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+  .outline { paint-order: stroke fill; -webkit-text-stroke: 0.16em var(--ink); text-shadow: 0 0.08em 0 var(--ink); }
+
+  .screen {
+    position: fixed; inset: 0;
+    display: none;
+    flex-direction: column; align-items: center; justify-content: center;
+    gap: clamp(10px, 2.6vh, 24px);
+    padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  }
+  .screen.on { display: flex; }
+  .dim { background: radial-gradient(ellipse at center, rgba(20,10,0,0.2), rgba(20,10,0,0.6)); }
+  .scroll { overflow-y: auto; justify-content: flex-start; touch-action: pan-y; }
+
+  .logo { font-size: clamp(48px, 12vmin, 120px); line-height: 0.9; text-align: center; margin: 0; color: var(--gold); transform: rotate(-4deg); }
+  .logo span { display: block; color: var(--red); font-size: 1.15em; }
+  .tagline { font-size: clamp(16px, 3vmin, 22px); margin: 0; text-align: center; }
+
+  .btn {
+    font-family: var(--font); font-size: clamp(20px, 4vmin, 32px); color: #fff;
+    border: 0; border-radius: 999px; padding: 0.35em 1.3em 0.45em;
+    background: linear-gradient(#8ee050, var(--green) 55%, #4aa221);
+    box-shadow: 0 0.16em 0 var(--green-dark), 0 0.3em 0.6em rgba(0,0,0,0.3), inset 0 0.08em 0 rgba(255,255,255,0.5);
+    cursor: pointer; transition: transform 0.12s cubic-bezier(.2,.8,.3,1.4);
+    min-width: 44px; min-height: 44px;
+    -webkit-text-stroke: 0.1em var(--ink); paint-order: stroke fill;
+    display: inline-flex; align-items: center; justify-content: center; gap: 0.3em;
+  }
+  .btn:hover:not(:disabled) { transform: scale(1.05); }
+  .btn:active:not(:disabled) { transform: scale(0.94); }
+  .btn:disabled { filter: grayscale(0.9) brightness(0.75); cursor: default; }
+  .btn.wood { background: linear-gradient(#f0b86e, var(--wood) 55%, #c07a34); box-shadow: 0 0.16em 0 var(--wood-dark), 0 0.3em 0.6em rgba(0,0,0,0.3), inset 0 0.08em 0 rgba(255,255,255,0.5); }
+  .btn.small { font-size: clamp(16px, 3vmin, 22px); padding: 0.3em 0.9em 0.38em; }
+  .btn:focus-visible, .icon-btn:focus-visible, .tile:focus-visible, .world:focus-visible { outline: 4px solid var(--gold); outline-offset: 3px; }
+  .row { display: flex; gap: clamp(10px, 2.4vmin, 20px); flex-wrap: wrap; justify-content: center; align-items: center; }
+
+  .icon-btn {
+    width: clamp(46px, 8vmin, 58px); height: clamp(46px, 8vmin, 58px);
+    border-radius: 50%; border: 0; padding: 0;
+    background: linear-gradient(#f0b86e, var(--wood) 55%, #c07a34);
+    box-shadow: 0 4px 0 var(--wood-dark), 0 6px 12px rgba(0,0,0,0.3), inset 0 2px 0 rgba(255,255,255,0.5);
+    display: grid; place-items: center; cursor: pointer;
+    transition: transform 0.12s cubic-bezier(.2,.8,.3,1.4);
+  }
+  .icon-btn:active { transform: scale(0.9); }
+  .icon-btn svg { width: 56%; height: 56%; }
+
+  /* top bars on menu screens */
+  .bar {
+    position: absolute; top: max(12px, env(safe-area-inset-top)); left: max(12px, env(safe-area-inset-left)); right: max(12px, env(safe-area-inset-right));
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; pointer-events: none;
+  }
+  .bar > * { pointer-events: auto; }
+  .coins { display: inline-flex; align-items: center; gap: 6px; font-size: clamp(20px, 4vmin, 30px); font-variant-numeric: tabular-nums; }
+  .coin { width: 1.1em; height: 1.1em; flex: none; }
+  .screen-title { font-size: clamp(28px, 6vmin, 52px); margin: 0; text-align: center; }
+
+  /* world select */
+  .worlds { display: flex; gap: clamp(10px, 2vmin, 18px); max-width: 100%; overflow-x: auto; padding: 8px 4px 16px; scroll-snap-type: x mandatory; touch-action: pan-x; }
+  .world {
+    flex: none; width: clamp(150px, 26vmin, 230px); scroll-snap-align: center;
+    border: 0; padding: 0; border-radius: 20px; overflow: hidden; cursor: pointer; text-align: left;
+    background: var(--panel); color: #fff; font-family: var(--font);
+    box-shadow: 0 0 0 4px #8a4f1c, 0 10px 20px rgba(0,0,0,0.4);
+    transition: transform 0.15s cubic-bezier(.2,.8,.3,1.4);
+  }
+  .world:hover:not(:disabled) { transform: translateY(-4px); }
+  .world canvas { display: block; width: 100%; aspect-ratio: 4 / 3; }
+  .world .meta { padding: 8px 12px 12px; display: grid; gap: 2px; }
+  .world .name { font-size: clamp(17px, 3.2vmin, 24px); }
+  .world .sub { font-size: clamp(12px, 2.2vmin, 15px); opacity: 0.8; }
+  .world .count { font-size: clamp(13px, 2.4vmin, 17px); color: var(--gold); }
+  .world:disabled { cursor: default; }
+  .world:disabled canvas { filter: grayscale(1) brightness(0.45); }
+
+  /* level grid */
+  .grid { display: grid; grid-template-columns: repeat(5, clamp(52px, 11.5vmin, 92px)); gap: clamp(7px, 1.6vmin, 14px); }
+  .tile {
+    aspect-ratio: 1; border: 0; border-radius: 22%; padding: 0;
+    font-family: var(--font); font-size: clamp(20px, 4.4vmin, 34px); color: #fff;
+    background: linear-gradient(#f0b86e, var(--wood) 55%, #c07a34);
+    box-shadow: 0 5px 0 var(--wood-dark), 0 8px 14px rgba(0,0,0,0.3), inset 0 2px 0 rgba(255,255,255,0.5);
+    cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    -webkit-text-stroke: 0.1em var(--ink); paint-order: stroke fill;
+    transition: transform 0.12s cubic-bezier(.2,.8,.3,1.4);
+  }
+  .tile.boss { background: linear-gradient(#ff8a6a, #d9442c 55%, #9c2410); box-shadow: 0 5px 0 #5e1407, 0 8px 14px rgba(0,0,0,0.3), inset 0 2px 0 rgba(255,255,255,0.4); }
+  .tile:hover:not(:disabled) { transform: translateY(-3px) rotate(-2deg); }
+  .tile:disabled { cursor: default; filter: grayscale(0.85) brightness(0.75); }
+  .tile .stars { display: flex; gap: 1px; height: 0.5em; }
+  .tile .stars svg { width: 0.5em; height: 0.5em; }
+
+  /* shop */
+  .shop { width: min(920px, 100%); display: grid; gap: 14px; padding-top: 64px; }
+  .shop h3 { margin: 6px 0 0; font-size: clamp(20px, 4vmin, 30px); }
+  .items { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+  .item {
+    display: grid; grid-template-columns: 92px 1fr; gap: 12px; align-items: center;
+    background: linear-gradient(#3a2817, #24170b); border-radius: 18px; padding: 12px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.12), 0 6px 14px rgba(0,0,0,0.35);
+  }
+  .item canvas { width: 92px; height: 92px; border-radius: 12px; background: radial-gradient(circle at 40% 35%, #6aa9d8, #2c5a86); }
+  .item .iname { font-size: 20px; }
+  .item .desc { font-family: system-ui, sans-serif; font-size: 14px; line-height: 1.35; opacity: 0.9; margin: 2px 0 8px; }
+  .pips { display: flex; gap: 4px; margin: 3px 0; }
+  .pips i { width: 16px; height: 8px; border-radius: 4px; background: rgba(255,255,255,0.18); }
+  .pips i.on { background: var(--gold); box-shadow: 0 0 6px rgba(255,210,58,0.6); }
+  .item .locked { font-family: system-ui, sans-serif; font-size: 14px; opacity: 0.7; }
+
+  /* story */
+  #story { justify-content: flex-end; padding-bottom: max(18px, env(safe-area-inset-bottom)); }
+  #story .caption {
+    max-width: min(760px, 100%);
+    background: rgba(20,12,4,0.78); border-radius: 18px; padding: 14px 20px;
+    font-size: clamp(18px, 3.4vmin, 28px); line-height: 1.3; text-align: center;
+    box-shadow: 0 0 0 3px rgba(255,210,58,0.6);
+  }
+  #story .skip { position: absolute; top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); }
+  #story .dots { display: flex; gap: 8px; }
+  #story .dots i { width: 10px; height: 10px; border-radius: 50%; background: rgba(255,255,255,0.35); }
+  #story .dots i.on { background: var(--gold); }
+
+  /* in-game HUD */
+  #hud { position: fixed; inset: 0; pointer-events: none; display: none; }
+  #hud.on { display: block; }
+  #hud .left { position: absolute; top: max(12px, env(safe-area-inset-top)); left: max(12px, env(safe-area-inset-left)); display: flex; gap: 10px; pointer-events: auto; }
+  #hud .right { position: absolute; top: max(10px, env(safe-area-inset-top)); right: max(16px, env(safe-area-inset-right)); text-align: right; display: grid; justify-items: end; gap: 2px; }
+  #score { font-size: clamp(26px, 5.4vmin, 44px); line-height: 1; font-variant-numeric: tabular-nums; }
+  #best { font-size: clamp(14px, 2.6vmin, 19px); }
+  #hud .coins { font-size: clamp(16px, 3vmin, 22px); }
+  #levelname { position: absolute; top: max(14px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); font-size: clamp(16px, 3vmin, 24px); white-space: nowrap; }
+  #hint { position: absolute; left: 50%; bottom: max(18px, env(safe-area-inset-bottom)); transform: translateX(-50%); font-size: clamp(15px, 2.8vmin, 22px); text-align: center; white-space: nowrap; transition: opacity 0.4s; }
+
+  /* cards */
+  .card {
+    background: linear-gradient(#3b2a1a, #24170b); border-radius: 28px;
+    padding: clamp(18px, 4vmin, 32px) clamp(22px, 6vmin, 52px);
+    box-shadow: 0 0 0 6px #8a4f1c, 0 0 0 10px #2b1606, 0 20px 40px rgba(0,0,0,0.5);
+    display: flex; flex-direction: column; align-items: center; gap: clamp(8px, 1.8vmin, 14px);
+    animation: pop 0.45s cubic-bezier(.2,.9,.3,1.3); max-width: 100%;
+  }
+  .card h2 { margin: 0; font-size: clamp(28px, 6.5vmin, 52px); color: var(--gold); text-align: center; }
+  .card.fail h2 { color: #ff7a5c; }
+  .big-stars { display: flex; gap: clamp(4px, 1.5vmin, 12px); align-items: flex-end; }
+  .big-stars svg { width: clamp(46px, 10vmin, 84px); height: clamp(46px, 10vmin, 84px); }
+  .big-stars svg:nth-child(2) { width: clamp(56px, 12vmin, 100px); height: clamp(56px, 12vmin, 100px); }
+  .big-stars .lit { animation: star 0.5s cubic-bezier(.2,.9,.3,1.5) both; }
+  .result-score { font-size: clamp(26px, 5.6vmin, 46px); font-variant-numeric: tabular-nums; }
+  .newbest { color: var(--gold); font-size: clamp(16px, 3vmin, 22px); text-align: center; }
+  @keyframes pop { from { transform: scale(0.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  @keyframes star { from { transform: scale(0) rotate(-90deg); } to { transform: scale(1) rotate(0); } }
+
+  #rotate { position: fixed; left: 50%; bottom: max(14px, env(safe-area-inset-bottom)); transform: translateX(-50%); background: rgba(0,0,0,0.55); color: #fff; padding: 8px 16px; border-radius: 999px; font-size: 15px; display: none; pointer-events: none; white-space: nowrap; }
+  @media (orientation: portrait) and (max-width: 700px) { body.playing #rotate { display: block; } body.playing #hint { display: none; } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .card, .big-stars .lit { animation: none; }
+    .btn, .tile, .icon-btn, .world { transition: none; }
+  }
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="Game"></canvas>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <radialGradient id="coin-g" cx="0.35" cy="0.3" r="0.8"><stop offset="0" stop-color="#fff6b0"/><stop offset="0.5" stop-color="#f5c330"/><stop offset="1" stop-color="#b47d08"/></radialGradient>
+    <symbol id="coin" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10.5" fill="url(#coin-g)" stroke="#6b4602" stroke-width="1.5"/><circle cx="12" cy="12" r="6.8" fill="none" stroke="#b07a0a" stroke-width="1.4"/><path d="M9.5 9.5c1-1.2 4-1.2 5 0M9.5 14.5c1 1.2 4 1.2 5 0" stroke="#8a5c06" stroke-width="1.4" fill="none" stroke-linecap="round"/></symbol>
+  </defs>
+</svg>
+
+<section id="title" class="screen on dim">
+  <h1 class="logo outline">Feather<span>Fury</span></h1>
+  <p class="tagline outline">The pigs stole the eggs. Five worlds stand between you and them.</p>
+  <div class="row"><button class="btn" id="play">Play</button></div>
+  <div class="row"><button class="icon-btn sound-btn" aria-label="Sound on/off"></button></div>
+</section>
+
+<section id="worlds" class="screen dim">
+  <div class="bar">
+    <button class="icon-btn" id="worlds-back" aria-label="Back to title"><svg viewBox="0 0 24 24"><path d="M15 4 7 12l8 8" fill="none" stroke="#2b1606" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    <div class="row">
+      <button class="btn wood small" id="worlds-shop">Shop</button>
+      <span class="coins outline"><svg class="coin"><use href="#coin"/></svg><span class="coin-count">0</span></span>
+    </div>
+  </div>
+  <h2 class="screen-title outline">Choose a world</h2>
+  <div class="worlds" id="world-list"></div>
+</section>
+
+<section id="levels" class="screen dim">
+  <div class="bar">
+    <button class="icon-btn" id="levels-back" aria-label="Back to worlds"><svg viewBox="0 0 24 24"><path d="M15 4 7 12l8 8" fill="none" stroke="#2b1606" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    <div class="row">
+      <button class="btn wood small" id="levels-shop">Shop</button>
+      <span class="coins outline"><svg class="coin"><use href="#coin"/></svg><span class="coin-count">0</span></span>
+    </div>
+  </div>
+  <h2 class="screen-title outline" id="levels-title"></h2>
+  <div class="grid" id="grid"></div>
+  <span class="outline" id="total-stars" style="font-size:clamp(16px,3vmin,22px)"></span>
+</section>
+
+<section id="shop" class="screen dim scroll">
+  <div class="bar">
+    <button class="icon-btn" id="shop-back" aria-label="Close shop"><svg viewBox="0 0 24 24"><path d="M15 4 7 12l8 8" fill="none" stroke="#2b1606" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    <span class="coins outline"><svg class="coin"><use href="#coin"/></svg><span class="coin-count">0</span></span>
+  </div>
+  <div class="shop">
+    <h2 class="screen-title outline">Upgrades</h2>
+    <p class="tagline outline">Pop pigs to earn coins. Helmets, bosses and kings are worth more.</p>
+    <h3 class="outline">Slingshot</h3>
+    <div class="items" id="shop-sling"></div>
+    <h3 class="outline">Birds</h3>
+    <div class="items" id="shop-birds"></div>
+  </div>
+</section>
+
+<section id="story" class="screen">
+  <button class="btn wood small skip" id="story-skip">Skip</button>
+  <p class="caption outline" id="story-text"></p>
+  <div class="row">
+    <div class="dots" id="story-dots"></div>
+    <button class="btn small" id="story-next">Next</button>
+  </div>
+</section>
+
+<div id="hud">
+  <div class="left">
+    <button class="icon-btn" id="pause-btn" aria-label="Pause"><svg viewBox="0 0 24 24"><rect x="5" y="4" width="5" height="16" rx="1.5" fill="#2b1606"/><rect x="14" y="4" width="5" height="16" rx="1.5" fill="#2b1606"/></svg></button>
+    <button class="icon-btn" id="restart-btn" aria-label="Restart level"><svg viewBox="0 0 24 24"><path d="M19 12a7 7 0 1 1-2.1-5" fill="none" stroke="#2b1606" stroke-width="3.4" stroke-linecap="round"/><path d="M19.5 3.5v5h-5" fill="none" stroke="#2b1606" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+  </div>
+  <div id="levelname" class="outline"></div>
+  <div class="right">
+    <div id="score" class="outline">0</div>
+    <div id="best" class="outline"></div>
+    <span class="coins outline"><svg class="coin"><use href="#coin"/></svg><span id="level-coins">+0</span></span>
+  </div>
+  <div id="hint" class="outline"></div>
+</div>
+
+<section id="pause" class="screen dim">
+  <div class="card">
+    <h2 class="outline">Paused</h2>
+    <div class="row"><button class="btn" id="resume">Resume</button></div>
+    <div class="row">
+      <button class="btn wood" id="pause-restart">Restart</button>
+      <button class="btn wood" id="pause-levels">Levels</button>
+    </div>
+    <div class="row"><button class="icon-btn sound-btn" aria-label="Sound on/off"></button></div>
+  </div>
+</section>
+
+<section id="result" class="screen dim">
+  <div class="card" id="result-card">
+    <h2 class="outline" id="result-title"></h2>
+    <div class="big-stars" id="result-stars"></div>
+    <div class="result-score outline" id="result-score"></div>
+    <div class="coins outline" id="result-coins"></div>
+    <div class="newbest outline" id="result-best"></div>
+    <div class="row" id="result-buttons"></div>
+  </div>
+</section>
+
+<div id="rotate">Turn your phone sideways for a bigger view</div>
+
+<script src="js/planck.min.js"></script>
+<script src="js/core.js"></script>
+<script src="js/seeds.js"></script>
+<script src="js/worlds.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/art.js"></script>
+<script src="js/story.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
