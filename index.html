@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#5fb8ec">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Feather Fury</title>
+<meta name="description" content="Fling angry birds with a slingshot and topple the pigs' towers. Runs in the browser, on phones too.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='34' r='26' fill='%23d9302b'/%3E%3Cellipse cx='34' cy='50' rx='18' ry='10' fill='%23f3dcc0'/%3E%3Ccircle cx='26' cy='30' r='6' fill='%23fff'/%3E%3Ccircle cx='40' cy='30' r='6' fill='%23fff'/%3E%3Ccircle cx='28' cy='31' r='3'/%3E%3Ccircle cx='42' cy='31' r='3'/%3E%3Cpath d='M16 20 L33 27 L50 20 L50 24 L33 31 L16 24Z'/%3E%3Cpath d='M30 36 L48 40 L30 44Z' fill='%23f6a21a'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lilita+One&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #2b1606;
+    --wood: #e0a05a;
+    --wood-dark: #8a4f1c;
+    --green: #6cc63a;
+    --green-dark: #2f7a12;
+    --red: #d9302b;
+    --sky: #5fb8ec;
+    --cream: #fff4dc;
+    --font: "Lilita One", "Arial Rounded MT Bold", "Trebuchet MS", sans-serif;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: var(--sky);
+    font-family: var(--font);
+    color: #fff;
+    user-select: none; -webkit-user-select: none;
+    touch-action: none;
+  }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+  .outline {
+    paint-order: stroke fill;
+    -webkit-text-stroke: 0.16em var(--ink);
+    text-shadow: 0 0.08em 0 var(--ink);
+  }
+
+  .screen {
+    position: fixed; inset: 0;
+    display: none;
+    flex-direction: column; align-items: center; justify-content: center;
+    gap: clamp(12px, 3vh, 28px);
+    padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  }
+  .screen.on { display: flex; }
+  .dim { background: radial-gradient(ellipse at center, rgba(20,10,0,0.25), rgba(20,10,0,0.6)); }
+
+  .logo {
+    font-size: clamp(48px, 12vmin, 120px);
+    line-height: 0.9;
+    text-align: center;
+    margin: 0;
+    color: #ffd23a;
+    transform: rotate(-4deg);
+    letter-spacing: 0.02em;
+  }
+  .logo span { display: block; color: var(--red); font-size: 1.15em; }
+  .tagline { font-size: clamp(16px, 3vmin, 22px); margin: 0; }
+
+  .btn {
+    font-family: var(--font);
+    font-size: clamp(20px, 4.2vmin, 34px);
+    color: #fff;
+    border: 0;
+    border-radius: 999px;
+    padding: 0.35em 1.4em 0.45em;
+    background: linear-gradient(#8ee050, var(--green) 55%, #4aa221);
+    box-shadow: 0 0.16em 0 var(--green-dark), 0 0.3em 0.6em rgba(0,0,0,0.3), inset 0 0.08em 0 rgba(255,255,255,0.5);
+    cursor: pointer;
+    transition: transform 0.12s cubic-bezier(.2,.8,.3,1.4);
+    min-width: 44px; min-height: 44px;
+    -webkit-text-stroke: 0.1em var(--ink);
+    paint-order: stroke fill;
+  }
+  .btn:hover { transform: scale(1.06); }
+  .btn:active { transform: scale(0.94); }
+  .btn:focus-visible, .icon-btn:focus-visible, .tile:focus-visible { outline: 4px solid #ffd23a; outline-offset: 3px; }
+  .btn.wood { background: linear-gradient(#f0b86e, var(--wood) 55%, #c07a34); box-shadow: 0 0.16em 0 var(--wood-dark), 0 0.3em 0.6em rgba(0,0,0,0.3), inset 0 0.08em 0 rgba(255,255,255,0.5); }
+  .row { display: flex; gap: clamp(10px, 2.5vmin, 22px); flex-wrap: wrap; justify-content: center; align-items: center; }
+
+  .icon-btn {
+    width: clamp(46px, 8vmin, 60px); height: clamp(46px, 8vmin, 60px);
+    border-radius: 50%;
+    border: 0;
+    background: linear-gradient(#f0b86e, var(--wood) 55%, #c07a34);
+    box-shadow: 0 4px 0 var(--wood-dark), 0 6px 12px rgba(0,0,0,0.3), inset 0 2px 0 rgba(255,255,255,0.5);
+    display: grid; place-items: center;
+    cursor: pointer;
+    transition: transform 0.12s cubic-bezier(.2,.8,.3,1.4);
+    padding: 0;
+  }
+  .icon-btn:active { transform: scale(0.9); }
+  .icon-btn svg { width: 56%; height: 56%; }
+
+  /* level select */
+  .levels-title { font-size: clamp(32px, 7vmin, 60px); margin: 0; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(5, clamp(58px, 13vmin, 104px));
+    gap: clamp(8px, 2vmin, 18px);
+  }
+  .tile {
+    aspect-ratio: 1;
+    border: 0; border-radius: 22%;
+    font-family: var(--font);
+    font-size: clamp(22px, 5vmin, 40px);
+    color: #fff;
+    background: linear-gradient(#f0b86e, var(--wood) 55%, #c07a34);
+    box-shadow: 0 5px 0 var(--wood-dark), 0 8px 14px rgba(0,0,0,0.3), inset 0 2px 0 rgba(255,255,255,0.5);
+    cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 2px;
+    -webkit-text-stroke: 0.1em var(--ink); paint-order: stroke fill;
+    transition: transform 0.12s cubic-bezier(.2,.8,.3,1.4);
+    padding: 0;
+  }
+  .tile:hover:not(:disabled) { transform: translateY(-3px) rotate(-2deg); }
+  .tile:disabled { cursor: default; filter: grayscale(0.85) brightness(0.8); }
+  .tile .stars { display: flex; gap: 1px; height: 0.5em; }
+  .tile .stars svg { width: 0.5em; height: 0.5em; }
+
+  /* in-game HUD */
+  #hud { position: fixed; inset: 0; pointer-events: none; display: none; }
+  #hud.on { display: block; }
+  #hud .left { position: absolute; top: max(12px, env(safe-area-inset-top)); left: max(12px, env(safe-area-inset-left)); display: flex; gap: 10px; pointer-events: auto; }
+  #hud .right { position: absolute; top: max(10px, env(safe-area-inset-top)); right: max(16px, env(safe-area-inset-right)); text-align: right; }
+  #score { font-size: clamp(26px, 5.5vmin, 46px); line-height: 1; font-variant-numeric: tabular-nums; }
+  #best { font-size: clamp(14px, 2.6vmin, 20px); opacity: 0.95; margin-top: 4px; }
+  #levelname { position: absolute; top: max(14px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); font-size: clamp(16px, 3vmin, 24px); opacity: 0.9; }
+  #hint {
+    position: absolute; left: 50%; bottom: max(18px, env(safe-area-inset-bottom)); transform: translateX(-50%);
+    font-size: clamp(15px, 2.8vmin, 22px); text-align: center; white-space: nowrap;
+    transition: opacity 0.4s;
+  }
+
+  /* result card */
+  .card {
+    background: linear-gradient(#3b2a1a, #24170b);
+    border-radius: 28px;
+    padding: clamp(18px, 4vmin, 34px) clamp(22px, 6vmin, 56px);
+    box-shadow: 0 0 0 6px #8a4f1c, 0 0 0 10px #2b1606, 0 20px 40px rgba(0,0,0,0.5);
+    display: flex; flex-direction: column; align-items: center; gap: clamp(8px, 2vmin, 16px);
+    animation: pop 0.45s cubic-bezier(.2,.9,.3,1.3);
+    max-width: 100%;
+  }
+  .card h2 { margin: 0; font-size: clamp(30px, 7vmin, 56px); color: #ffd23a; text-align: center; }
+  .card.fail h2 { color: #ff7a5c; }
+  .big-stars { display: flex; gap: clamp(4px, 1.5vmin, 12px); align-items: flex-end; }
+  .big-stars svg { width: clamp(48px, 11vmin, 90px); height: clamp(48px, 11vmin, 90px); }
+  .big-stars svg:nth-child(2) { width: clamp(58px, 13vmin, 108px); height: clamp(58px, 13vmin, 108px); }
+  .big-stars .lit { animation: star 0.5s cubic-bezier(.2,.9,.3,1.5) both; }
+  .result-score { font-size: clamp(28px, 6vmin, 50px); font-variant-numeric: tabular-nums; }
+  .newbest { color: #ffd23a; font-size: clamp(16px, 3vmin, 24px); }
+  @keyframes pop { from { transform: scale(0.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  @keyframes star { from { transform: scale(0) rotate(-90deg); } to { transform: scale(1) rotate(0); } }
+
+  #rotate {
+    position: fixed; left: 50%; bottom: max(14px, env(safe-area-inset-bottom)); transform: translateX(-50%);
+    background: rgba(0,0,0,0.55); color: #fff; padding: 8px 16px; border-radius: 999px;
+    font-size: 15px; display: none; pointer-events: none; white-space: nowrap;
+  }
+  @media (orientation: portrait) and (max-width: 700px) { body.playing #rotate { display: block; } body.playing #hint { display: none; } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .card, .big-stars .lit { animation: none; }
+    .btn, .tile, .icon-btn { transition: none; }
+  }
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="Game"></canvas>
+
+<section id="title" class="screen on dim">
+  <h1 class="logo outline">Feather<span>Fury</span></h1>
+  <p class="tagline outline">The pigs stole the eggs. Get them back.</p>
+  <div class="row">
+    <button class="btn" id="play">Play</button>
+  </div>
+  <div class="row">
+    <button class="icon-btn sound-btn" aria-label="Sound on/off"></button>
+  </div>
+</section>
+
+<section id="levels" class="screen dim">
+  <h2 class="levels-title outline">Choose a level</h2>
+  <div class="grid" id="grid"></div>
+  <div class="row">
+    <button class="icon-btn" id="levels-back" aria-label="Back to title">
+      <svg viewBox="0 0 24 24"><path d="M15 4 7 12l8 8" fill="none" stroke="#2b1606" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <span class="outline" id="total-stars" style="font-size:clamp(18px,3.4vmin,26px)"></span>
+  </div>
+</section>
+
+<div id="hud">
+  <div class="left">
+    <button class="icon-btn" id="pause-btn" aria-label="Pause">
+      <svg viewBox="0 0 24 24"><rect x="5" y="4" width="5" height="16" rx="1.5" fill="#2b1606"/><rect x="14" y="4" width="5" height="16" rx="1.5" fill="#2b1606"/></svg>
+    </button>
+    <button class="icon-btn" id="restart-btn" aria-label="Restart level">
+      <svg viewBox="0 0 24 24"><path d="M19 12a7 7 0 1 1-2.1-5" fill="none" stroke="#2b1606" stroke-width="3.4" stroke-linecap="round"/><path d="M19.5 3.5v5h-5" fill="none" stroke="#2b1606" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+  </div>
+  <div id="levelname" class="outline"></div>
+  <div class="right">
+    <div id="score" class="outline">0</div>
+    <div id="best" class="outline"></div>
+  </div>
+  <div id="hint" class="outline"></div>
+</div>
+
+<section id="pause" class="screen dim">
+  <div class="card">
+    <h2 class="outline">Paused</h2>
+    <div class="row">
+      <button class="btn" id="resume">Resume</button>
+    </div>
+    <div class="row">
+      <button class="btn wood" id="pause-restart">Restart</button>
+      <button class="btn wood" id="pause-levels">Levels</button>
+    </div>
+    <div class="row">
+      <button class="icon-btn sound-btn" aria-label="Sound on/off"></button>
+    </div>
+  </div>
+</section>
+
+<section id="result" class="screen dim">
+  <div class="card" id="result-card">
+    <h2 class="outline" id="result-title"></h2>
+    <div class="big-stars" id="result-stars"></div>
+    <div class="result-score outline" id="result-score"></div>
+    <div class="newbest outline" id="result-best"></div>
+    <div class="row" id="result-buttons"></div>
+  </div>
+</section>
+
+<div id="rotate">Turn your phone sideways for a bigger view</div>
+
+<script src="js/planck.min.js"></script>
+<script src="js/core.js"></script>
+<script src="js/levels.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/art.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
